@@ -9,6 +9,7 @@ Created on Wed Oct 27 14:57:07 2021
 import pandas as pd
 import csv
 import re
+import pickle as pk
 
 list_DataSet = list()
 
@@ -47,22 +48,114 @@ for list_transaction in list_DataSet:
 
 df_DataSet = pd.DataFrame(list_DataSet, columns=('Date','Reference','Montant'))
 
-
 def SimplificationRefMaestro(str_reference):
     match = re.match(r"(^Achat\sMaestro)(\s\w{2}\.\w{2}\.\w{4}\s\w{2}\:\w{2}\s)(.+)(\sNuméro de carte:\s\w{8}$)", str_reference)
     if match :
-        return match.groups()[2].lower()
+        return 'maestro ' + match.groups()[2].lower()
     else:
         return str_reference.lower()
     
     
     
-SimplificationRefMaestro('Achat Maestro 15.07.2019 19:39 migrolino Martigny Numéro de carte: 72680131')
-
-type(df_DataSet['Reference'][1])
-    
 df_DataSet['Reference'] = df_DataSet['Reference'].apply(SimplificationRefMaestro)
 
+df_DataSet_Credit = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+df_DataSet_Debit = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+for row in df_DataSet.iterrows() :   
+    if row[1]['Montant'] > 0:
+        df_DataSet_Credit = df_DataSet_Credit.append(row[1])
+    elif row[1]['Montant'] < 0:
+        df_DataSet_Debit = df_DataSet_Debit.append(row[1])
+
+
+# Tri à partir de tout les débits       
+df_DataSet_Debit_OrdreEbanking = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+df_DataSet_Debit_DebitsLSV = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+df_DataSet_Debit_Bancomat = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+df_DataSet_Debit_FraisBank = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+df_DataSet_Debit_AchatMaestro = pd.DataFrame(columns=('Date','Reference','Montant'))
+
+
+for row in df_DataSet_Debit.iterrows():
+    if re.match(r"^ordre e-banking", row[1]['Reference']):
+        df_DataSet_Debit_OrdreEbanking = df_DataSet_Debit_OrdreEbanking.append(row[1])
+    elif re.match(r"^(débit lsv)\s(.+)", row[1]['Reference']):
+        df_DataSet_Debit_DebitsLSV = df_DataSet_Debit_DebitsLSV.append(row[1])
+    elif re.match(r"^(bancomat)\s(.+)", row[1]['Reference']) or re.match(r"^(prélèvement)\s(.+)", row[1]['Reference']):
+        df_DataSet_Debit_Bancomat = df_DataSet_Debit_Bancomat.append(row[1])
+    elif re.match(r"^(frais)\s(.+)", row[1]['Reference']):
+        df_DataSet_Debit_FraisBank = df_DataSet_Debit_FraisBank.append(row[1])
+    else :
+        df_DataSet_Debit_AchatMaestro = df_DataSet_Debit_AchatMaestro.append(row[1])
+
+
+# Création d'un DataSet avec chaque reference unique
+df_DataSet_RefUniq = df_DataSet_Debit_AchatMaestro.groupby('Reference').sum()
+
+df_DataSet_RefUniq['Categorie'] = 0
+
+
+#Module de chargement du DataSet Complété
+with open('df_DataSet_RefUniq.pickle', 'rb') as datas :
+    df_DataSet_RefUniq = pk.load(datas)
+
+#Ajout des catégories à chaque débit par carte de df_achatMaestro
+df_DataSet_Debit_AchatMaestro['Categorie'] = 0
+
+list_temp_2 = list()
+for row in df_DataSet_Debit_AchatMaestro.iterrows():   
+    list_temp_2.append(df_DataSet_RefUniq.loc[row[1]['Reference']]['Categorie'])
+
+df_DataSet_Debit_AchatMaestro['Categorie'] = list_temp_2   
+
+#Traitement des Debit LSV
+list_temp_3 = list()
+for row in df_DataSet_Debit_DebitsLSV.iterrows() :
+    print(row[1])
+    if re.match(r"^(débit lsv\s)(sunrise)", row[1]['Reference']):
+        list_temp_3.append(2)
+    elif re.match(r"^(débit lsv\s)(visana)", row[1]['Reference']):
+        list_temp_3.append(5)
+        
+df_DataSet_Debit_DebitsLSV['Categorie'] = list_temp_3
+
+#Traitement des frais bancaires
+
+df_DataSet_Debit_FraisBank['Categorie'] = 6
+
+#Categorisation des retraits d'espece
+df_DataSet_Debit_Bancomat['Categorie'] = 1
+
+
+df_test = df_DataSet_RefUniq.groupby('Categorie').sum()
+df_test2 = df_DataSet_Debit_DebitsLSV.groupby('Categorie').sum()
+df_test3 = pd.concat([df_test, df_test2])
+df_test3 = df_test3.groupby('Categorie').sum()
+df_test3.plot(kind='bar')
+#df_DataSet_Debit_AchatMaestro['Categorie'].apply(lambda : return df_D)
+'''
+df_test = df_DataSet_RefUniq.sort_values(by=['Categorie'])
+df_test = df_DataSet_RefUniq.groupby('Categorie').sum()
+
+total = len(df_DataSet_Debit_OrdreEbanking) + len(df_DataSet_Debit_DebitsLSV) + len(df_DataSet_Debit_Bancomat) + len(df_DataSet_Debit_FraisBank) + len(df_DataSet_Debit_AchatMaestro)
+
+    
+df_DataSet_Debit_Bancomat['Montant'].sum()
+df_DataSet_Debit_AchatMaestro['Montant'].sum()
+df_DataSet_Debit_AchatMaestro['Montant'].mean()
+df_DataSet_Debit_OrdreEbanking['Montant'].sum()
+df_DataSet_Debit_FraisBank['Montant'].sum()
+
+
+df_DataSet_Credit['Montant'].sum() + df_DataSet_Debit['Montant'].sum()
+'''
+'''
 df_DataSet_sum = df_DataSet.groupby('Reference').sum()
 
 df_DataSet_sum_sorted = df_DataSet_sum.sort_values(by=['Montant'])
@@ -100,9 +193,8 @@ df_stats_references_1 = df_stats_references.sort_values()
 
 
 
-
 #df_DataSet.set_index('Date', inplace = True)
-'''
+
 ^Achat\sMaestro\s\w{2}\.\w{2}\.\w{4}\s\w{2}\:\w{2}\s(.+)\sNuméro de carte:\s\w{8}$
 ^(Achat\sMaestro)(\s\w{2}\.\w{2}\.\w{4}\s\w{2}\:\w{2}\s)(.+)\s(Numéro de carte:\s\w{8})$
 (^Achat\sMaestro)(\s\w{2}\.\w{2}\.\w{4}\s\w{2}\:\w{2}\s)(.+)\s(Numéro de carte:\s\w{8}$)

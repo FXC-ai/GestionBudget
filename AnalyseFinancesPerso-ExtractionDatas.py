@@ -198,6 +198,8 @@ df_DataSet_Debit_FraisBank['Categorie'] = 6
 df_DataSet_Debit_Bancomat['Categorie'] = 1
 
 df_DataSet_Debit_OrdreEbanking = Tri_OrdreEbanking(df_DataSet_Debit_OrdreEbanking)
+df_DataSet_Debit_OrdreEbanking_sorted = df_DataSet_Debit_OrdreEbanking.sort_values(by=['Categorie'])
+
 
 '''
 def Save_DataSet (dict_DataSet):
